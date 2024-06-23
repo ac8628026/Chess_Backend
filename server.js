@@ -1,20 +1,17 @@
-// Import the required modules
-const express = require('express'); // Express is used to create a web server
-const http = require('http'); // The http module is used to create an HTTP server
-const socketIo = require('socket.io'); // Socket.IO enables real-time, bidirectional communication
-const cors = require('cors'); // CORS middleware to handle Cross-Origin Resource Sharing
+const { Server } = require('socket.io');
+const { createServer } = require('http');
+const cors = require('cors');
+const express = require('express');
 
-// Create an Express application
+// Initialize the Express app and use CORS middleware
 const app = express();
-// Use the CORS middleware with default settings
 app.use(cors());
 
-// Create an HTTP server and attach the Express app to it
-const server = http.createServer(app);
-// Attach Socket.IO to the HTTP server and enable CORS
-const io = socketIo(server, {
+// Create the HTTP server and attach the Express app to it
+const server = createServer(app);
+const io = new Server(server, {
   cors: {
-    origin: "*", 
+    origin: "*",
     methods: ["GET", "POST"]
   }
 });
@@ -23,81 +20,59 @@ const io = socketIo(server, {
 const rooms = {};
 
 // Handle new connections to the server
-io.on('connection', async(socket) => {
-    console.log('A user connected'); // Log when a user connects
+io.on('connection', (socket) => {
+  console.log('A user connected');
+  
+  socket.on('join-room', (room) => {
+    console.log('User joined room', room);
+    socket.join(room);
+    
+    if (!rooms[room]) {
+      rooms[room] = { players: [], moves: [] };
+    }
+    
+    if (rooms[room].players.length < 2) {
+      const side = rooms[room].players.length === 0 ? 'white' : 'black';
+      rooms[room].players.push({ id: socket.id, side });
+      socket.emit('playerSide', side);
+      console.log('Player side', side);
+      
+      if (rooms[room].players.length === 2) {
+        io.to(room).emit('startGame', rooms[room].players);
+      }
+    } else {
+      socket.emit('roomfull', 'Room is full. Please try another room.');
+    }
+  });
 
-    // Handle the event when a user joins a room
-    socket.on('join-room', (room) => {
-      console.log('User joined room', room); // Log when a user joins a room
-       socket.join(room); // Make the socket join the specified room
-       
-        // Initialize the room if it doesn't exist
-        if (!rooms[room]) {
-            rooms[room] = { players: [], moves: [] };
-
-        }
-        
-        
-        // Check if there are less than 2 players in the room
-        if (rooms[room].players.length < 2) {
-            // Assign the side (white or black) based on the number of players
-            const side = rooms[room].players.length === 0 ? 'white' : 'black';
-            // Add the player to the room
-            rooms[room].players.push({ id: socket.id, side });
-            // Notify the player of their side
-            socket.emit('playerSide', side);
-            console.log('Player side', side); 
-
-            // If there are now 2 players, start the game
-            if (rooms[room].players.length === 2) {
-                io.to(room).emit('startGame', rooms[room].players);
-            }
-            
-        
-        } else {
-            // If the room already has 2 players, notify the user
-            socket.emit('roomfull', 'Room is full. Please try another room.');
-            
-        }
-    });
-
-socket.on('gameEnd', ({ roomId, status }) => {
-  console.log('Game end event received', status);
-  io.to(roomId).emit('gameEnd', status);
-   
+  socket.on('gameEnd', ({ roomId, status }) => {
+    console.log('Game end event received', status);
+    io.to(roomId).emit('gameEnd', status);
   });
 
   socket.on('requestRematch', (roomId) => {
     const room = rooms[roomId];
     if (room) {
-      room.moves=[];
+      room.moves = [];
       io.to(roomId).emit('requestRematch');
       io.to(roomId).emit('message', 'Match Restarted');
-      
     }
   });
-  
 
-    // Handle move events
-    socket.on('move', ({ roomId, move }) => {
-      
-      try {
-          if (!rooms[roomId]) {
-              console.error(`Room ${roomId} not found`);
-              return;
-          }
-          
-          rooms[roomId].moves.push(move);
-          
-          socket.to(roomId).emit('move', move);
-      } catch (error) {
-          console.error(`Error handling move event: ${error.message}`);
+  socket.on('move', ({ roomId, move }) => {
+    try {
+      if (!rooms[roomId]) {
+        console.error(`Room ${roomId} not found`);
+        return;
       }
+      
+      rooms[roomId].moves.push(move);
+      socket.to(roomId).emit('move', move);
+    } catch (error) {
+      console.error(`Error handling move event: ${error.message}`);
+    }
   });
 
-
-
-                // Signaling for WebRTC
   socket.on('offer', (data) => {
     console.log('Offer received');
     socket.to(data.room).emit('offer', data);
@@ -111,25 +86,28 @@ socket.on('gameEnd', ({ roomId, status }) => {
     socket.to(data.room).emit('ice-candidate', data);
   });
 
-    // Handle user disconnection
-    socket.on('disconnect', () => {
-        console.log('User disconnected'); // Log when a user disconnects
+  socket.on('disconnect', () => {
+    console.log('User disconnected');
+    
+    for (const room in rooms) {
+      rooms[room].players = rooms[room].players.filter(player => player.id !== socket.id);
+      if (rooms[room].players.length < 2) {
+        io.to(room).emit('NewRoom', 'The other player has left. please Join New Room');
+      }
+    }
+  });
+});
 
-        // Iterate over all rooms to find where the disconnected user was
-        for (const room in rooms) {
-            // Remove the player from the room
-            rooms[room].players = rooms[room].players.filter(player => player.id !== socket.id);
-            // If there's less than 2 players in the room now, notify the remaining player
-            if (rooms[room].players.length < 2) {
-                io.to(room).emit('NewRoom', 'The other player has left. please Join New Room');
-            }
-        }
+// Export the server as a Vercel serverless function
+module.exports = (req, res) => {
+  if (!res.socket.server.io) {
+    console.log('Starting Socket.IO server');
+    res.socket.server.io = io;
+    server.listen(3001, '0.0.0.0', () => {
+      console.log(`Server running on port 3001`);
     });
-});
-
-// Define the port to listen on
-const PORT = process.env.PORT || 3001;
-// Start the server and listen on the specified port
-server.listen(3001,'0.0.0.0', () => {
-    console.log(`Server running on port ${PORT}`); // Log the port the server is running on
-});
+  } else {
+    console.log('Socket.IO server already running');
+  }
+  res.end();
+};
