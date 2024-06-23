@@ -7,6 +7,6 @@
     "socket.io": "^4.7.5"
   },
   "scripts": {
-    "start-server": "nodemon server.js"
+    "start": "nodemon server.js"
   }
 }
