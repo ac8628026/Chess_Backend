@@ -1,16 +1,16 @@
-// Import the required modules
-const express = require('express'); // Express is used to create a web server
-const http = require('http'); // The http module is used to create an HTTP server
-const socketIo = require('socket.io'); // Socket.IO enables real-time, bidirectional communication
-const cors = require('cors'); // CORS middleware to handle Cross-Origin Resource Sharing
-
-// Create an Express application
+const express = require('express');
+const serverless = require('serverless-http');
 const app = express();
+const http = require('http');
+const socketIo = require('socket.io');
+const cors = require('cors');
+
 // Use the CORS middleware with default settings
 app.use(cors());
 
 // Create an HTTP server and attach the Express app to it
 const server = http.createServer(app);
+
 // Attach Socket.IO to the HTTP server and enable CORS
 const io = socketIo(server, {
   cors: {
@@ -34,9 +34,7 @@ io.on('connection', async(socket) => {
         // Initialize the room if it doesn't exist
         if (!rooms[room]) {
             rooms[room] = { players: [], moves: [] };
-
         }
-        
         
         // Check if there are less than 2 players in the room
         if (rooms[room].players.length < 2) {
@@ -52,35 +50,28 @@ io.on('connection', async(socket) => {
             if (rooms[room].players.length === 2) {
                 io.to(room).emit('startGame', rooms[room].players);
             }
-            
-        
         } else {
             // If the room already has 2 players, notify the user
             socket.emit('roomfull', 'Room is full. Please try another room.');
-            
         }
     });
 
-socket.on('gameEnd', ({ roomId, status }) => {
-  console.log('Game end event received', status);
-  io.to(roomId).emit('gameEnd', status);
-   
-  });
+    socket.on('gameEnd', ({ roomId, status }) => {
+      console.log('Game end event received', status);
+      io.to(roomId).emit('gameEnd', status);
+    });
 
-  socket.on('requestRematch', (roomId) => {
-    const room = rooms[roomId];
-    if (room) {
-      room.moves=[];
-      io.to(roomId).emit('requestRematch');
-      io.to(roomId).emit('message', 'Match Restarted');
-      
-    }
-  });
-  
+    socket.on('requestRematch', (roomId) => {
+        const room = rooms[roomId];
+        if (room) {
+          room.moves = [];
+          io.to(roomId).emit('requestRematch');
+          io.to(roomId).emit('message', 'Match Restarted');
+        }
+    });
 
     // Handle move events
     socket.on('move', ({ roomId, move }) => {
-      
       try {
           if (!rooms[roomId]) {
               console.error(`Room ${roomId} not found`);
@@ -93,23 +84,21 @@ socket.on('gameEnd', ({ roomId, status }) => {
       } catch (error) {
           console.error(`Error handling move event: ${error.message}`);
       }
-  });
+    });
 
+    // Signaling for WebRTC
+    socket.on('offer', (data) => {
+        console.log('Offer received');
+        socket.to(data.room).emit('offer', data);
+    });
 
+    socket.on('answer', (data) => {
+        socket.to(data.room).emit('answer', data);
+    });
 
-                // Signaling for WebRTC
-  socket.on('offer', (data) => {
-    console.log('Offer received');
-    socket.to(data.room).emit('offer', data);
-  });
-
-  socket.on('answer', (data) => {
-    socket.to(data.room).emit('answer', data);
-  });
-
-  socket.on('ice-candidate', (data) => {
-    socket.to(data.room).emit('ice-candidate', data);
-  });
+    socket.on('ice-candidate', (data) => {
+        socket.to(data.room).emit('ice-candidate', data);
+    });
 
     // Handle user disconnection
     socket.on('disconnect', () => {
@@ -127,9 +116,5 @@ socket.on('gameEnd', ({ roomId, status }) => {
     });
 });
 
-// Define the port to listen on
-const PORT = process.env.PORT || 3001;
-// Start the server and listen on the specified port
-server.listen(3001,'0.0.0.0', () => {
-    console.log(`Server running on port ${PORT}`); // Log the port the server is running on
-});
+// Export the serverless function
+module.exports.handler = serverless(app);
