@@ -14,9 +14,13 @@ const server = http.createServer(app);
 // Attach Socket.IO to the HTTP server and enable CORS
 const io = socketIo(server, {
   cors: {
-    origin: "*", 
-    methods: ["GET", "POST"]
-  }
+    origin: ["ws://199e-203-110-242-42.ngrok-free.app", "http://localhost:5173","*"],
+    methods: ["GET", "POST"],
+    credentials: true,
+    allowedHeaders: ["my-custom-header"]
+  },
+  allowEIO3: true, // Allow Engine.IO protocol version 3
+  transports: ['websocket', 'polling']
 });
 
 // Object to store room data
@@ -34,7 +38,6 @@ io.on('connection', async(socket) => {
         // Initialize the room if it doesn't exist
         if (!rooms[room]) {
             rooms[room] = { players: [], moves: [] };
-
         }
         
         
@@ -121,15 +124,15 @@ socket.on('gameEnd', ({ roomId, status }) => {
             rooms[room].players = rooms[room].players.filter(player => player.id !== socket.id);
             // If there's less than 2 players in the room now, notify the remaining player
             if (rooms[room].players.length < 2) {
-                io.to(room).emit('NewRoom', 'The other player has left. please Join New Room');
+              io.to(room).emit('NewRoom', 'The other player has left. please Join New Room');
             }
         }
     });
 });
 
 // Define the port to listen on
-const PORT = process.env.PORT || 3001;
+const PORT = process.env.PORT || 3000;
 // Start the server and listen on the specified port
-server.listen(3001,'0.0.0.0', () => {
+server.listen(PORT,'0.0.0.0', () => {
     console.log(`Server running on port ${PORT}`); // Log the port the server is running on
 });
