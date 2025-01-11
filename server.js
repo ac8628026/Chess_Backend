@@ -6,22 +6,41 @@ const cors = require('cors'); // CORS middleware to handle Cross-Origin Resource
 
 // Create an Express application
 const app = express();
+app.use((req, res, next) => {
+  console.log(`${new Date().toISOString()} - ${req.method} ${req.url}`);
+  next();
+});
 // Use the CORS middleware with default settings
-app.use(cors());
+app.use(cors({
+  origin: '*',
+  methods: ['GET', 'POST', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization']
+}));
+app.get('/', (req, res) => {
+  console.log('Root route hit');
+  res.send('Server is running');
+});
 
+app.get('/health', (req, res) => {
+  res.json({
+    status: 'ok',
+    time: new Date().toISOString(),
+    message: 'Server is healthy'
+  });
+});
 // Create an HTTP server and attach the Express app to it
 const server = http.createServer(app);
 // Attach Socket.IO to the HTTP server and enable CORS
 const io = socketIo(server, {
   cors: {
-    origin: ["ws://199e-203-110-242-42.ngrok-free.app", "http://localhost:5173","*"],
+    origin: '*',
     methods: ["GET", "POST"],
     credentials: true,
-    allowedHeaders: ["my-custom-header"]
   },
   allowEIO3: true, // Allow Engine.IO protocol version 3
   transports: ['websocket', 'polling']
 });
+
 
 // Object to store room data
 const rooms = {};
@@ -133,6 +152,10 @@ socket.on('gameEnd', ({ roomId, status }) => {
 // Define the port to listen on
 const PORT = process.env.PORT || 3000;
 // Start the server and listen on the specified port
-server.listen(PORT,'0.0.0.0', () => {
-    console.log(`Server running on port ${PORT}`); // Log the port the server is running on
+server.listen(PORT, '0.0.0.0', () => {
+  console.log('==================================');
+  console.log(`Server started at ${new Date().toISOString()}`);
+  console.log(`Local: http://localhost:${PORT}`);
+  console.log(`Health check: http://localhost:${PORT}/health`);
+  console.log('==================================');
 });
